@@ -14,6 +14,7 @@ class ViewController: UIViewController {
     // Main view for showing camera content.
     @IBOutlet weak var previewView: UIView?
     
+    //@IBOutlet weak var gazeSlider: UISlider!
     // AVCapture variables to hold sequence data
     var session: AVCaptureSession?
     var previewLayer: AVCaptureVideoPreviewLayer?
@@ -35,6 +36,14 @@ class ViewController: UIViewController {
     private var trackingRequests: [VNTrackObjectRequest]?
     
     lazy var sequenceRequestHandler = VNSequenceRequestHandler()
+    
+    // Left Eye Extrema
+    var leftEyeX: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
+    var leftEyeY: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
+    
+    // isBlinking
+    
+    var isBlinking: Bool = false
     
     // MARK: UIViewController overrides
     
@@ -315,6 +324,8 @@ class ViewController: UIViewController {
                 } catch let error as NSError {
                     NSLog("Failed to perform FaceLandmarkRequest: %@", error)
                 }
+                
+                
             }
         }
     }
@@ -332,6 +343,54 @@ class ViewController: UIViewController {
         guard let landmarksRequest = request as? VNDetectFaceLandmarksRequest,
               let results = landmarksRequest.results as? [VNFaceObservation] else {
             return
+        }
+        
+        // Flipped Module Part 1.1, 1.2, 1.3
+        // The points of the landmarks are normalized to be resolution independent. By putting the coordinates of the landmarks on a scale of 0.0-1.0, they are easily translatable across various resolutions. The points are normalized to the dimensions of the face observation's bounding box
+        for observation in results {
+            if let landmarks = observation.landmarks {
+                if let leftEye = landmarks.leftEye {
+                    let leftEyePoints = leftEye.normalizedPoints
+                    
+                    let minX = leftEyePoints.map { $0.x}.min() ?? 0.0
+                    let maxX = leftEyePoints.map { $0.x}.max() ?? 0.0
+                    let minY = leftEyePoints.map { $0.y}.min() ?? 0.0
+                    let maxY = leftEyePoints.map { $0.y}.max() ?? 0.0
+                    
+                    var currentDiff: CGFloat = maxY - minY
+                    
+                    // Flipped Module part 2.1
+                    
+                    // This is the current difference between your left eye's Y max and Y min.
+                    
+                    print("Current Y Difference: \(currentDiff)")
+                    
+                    print("Left Eye - Min X: \(minX), Max X: \(maxX), Min Y: \(minY), Max Y: \(maxY)")
+                    
+                    if minX < leftEyeX.min { leftEyeX.min = minX }
+                    if maxX > leftEyeX.max { leftEyeX.max = maxX }
+                    if minY < leftEyeY.min { leftEyeY.min = minY }
+                    if maxY > leftEyeY.max { leftEyeY.max = maxY }
+                    
+                    // Global Y axis difference
+                    
+                    print("Greatest Y Difference: \(leftEyeY.max-leftEyeY.min)")
+                    
+                    //If the difference is below a finetuned threshold/ then set the property isBlinking to true.
+                    
+                    if currentDiff <= 0.038 {
+                        self.isBlinking = true
+                    }else{
+                        self.isBlinking = false
+                    }
+                    
+                    // Printing for debugging and ease of use
+                    
+                    print("Is Blinking: \(self.isBlinking)")
+                    detectGazeDirection(in: observation, isBlinking: self.isBlinking)
+                }
+                //detectGazeDirection(in: results, isBlinking: self.isBlinking)
+            }
         }
         
         // Perform all UI updates (drawing) on the main queue, not the background queue on which this handler is being called.
@@ -709,6 +768,30 @@ extension ViewController {
         
         CATransaction.commit()
     }
+    
+    //Flipped module part 3.1 getting leftPupil landmark and getting min x value
+    func detectGazeDirection(in faceObservation: VNFaceObservation, isBlinking: Bool) -> CGFloat? {
+        //can only run if isBlinking is false
+        guard !isBlinking, let landmarks = faceObservation.landmarks else { return nil}
+        
+        // Access the leftPupil landmark
+        guard let leftPupil = landmarks.leftPupil else {
+            print("Left pupil landmark not found")
+            return nil
+        }
+        
+        // Calculate the minimum x value
+        let minXValue = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
+        
+        let gazeDirection = minXValue
+        // Print or return gaze direction for further usage
+        print("Gaze direction (based on left pupil x): \(gazeDirection)")
+        //self.gazeSlider.setValue(Float(gazeDirection), animated: true)
+        return gazeDirection
+    }
+ 
+    
+    
 }
 
 
