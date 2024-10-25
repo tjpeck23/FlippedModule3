@@ -36,6 +36,10 @@ class ViewController: UIViewController {
     
     lazy var sequenceRequestHandler = VNSequenceRequestHandler()
     
+    // Left Eye Extrema
+    var leftEyeX: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
+    var leftEyeY: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
+    
     // MARK: UIViewController overrides
     
     override func viewDidLoad() {
@@ -332,6 +336,29 @@ class ViewController: UIViewController {
         guard let landmarksRequest = request as? VNDetectFaceLandmarksRequest,
               let results = landmarksRequest.results as? [VNFaceObservation] else {
             return
+        }
+        
+        // Flipped Module Part 1.1, 1.2, 1.3
+        // The points of the landmarks are normalized to be resolution independent. By putting the coordinates of the landmarks on a scale of 0.0-1.0, they are easily translatable across various resolutions. The points are normalized to the dimensions of the face observation's bounding box
+        for observation in results {
+            if let landmarks = observation.landmarks {
+                if let leftEye = landmarks.leftEye {
+                    let leftEyePoints = leftEye.normalizedPoints
+                    
+                    let minX = leftEyePoints.map { $0.x}.min() ?? 0.0
+                    let maxX = leftEyePoints.map { $0.x}.max() ?? 0.0
+                    let minY = leftEyePoints.map { $0.y}.min() ?? 0.0
+                    let maxY = leftEyePoints.map { $0.y}.max() ?? 0.0
+                    
+                    print("Left Eye - Min X: \(minX), Max X: \(maxX), Min Y: \(minY), Max Y: \(maxY)")
+                    
+                    if minX < leftEyeX.min { leftEyeX.min = minX }
+                    if maxX > leftEyeX.max { leftEyeX.max = maxX }
+                    if minY < leftEyeY.min { leftEyeY.min = minY }
+                    if maxY > leftEyeY.max { leftEyeY.max = maxY }
+                    
+                }
+            }
         }
         
         // Perform all UI updates (drawing) on the main queue, not the background queue on which this handler is being called.
