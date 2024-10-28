@@ -13,6 +13,7 @@
 		28C69F4E204F6ACA00949F30 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 28C69F4C204F6ACA00949F30 /* Main.storyboard */; };
 		28C69F50204F6ACA00949F30 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 28C69F4F204F6ACA00949F30 /* Assets.xcassets */; };
 		28C69F53204F6ACA00949F30 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 28C69F51204F6ACA00949F30 /* LaunchScreen.storyboard */; };
+		DE64065C2CD823B100CFCCCD /* BodyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE64065B2CD823B100CFCCCD /* BodyViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 		28C69F52204F6ACA00949F30 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		28C69F54204F6ACA00949F30 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4231095939659F544A7FE2D5 /* LICENSE.txt */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = LICENSE.txt; sourceTree = "<group>"; };
+		DE64065B2CD823B100CFCCCD /* BodyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyViewController.swift; sourceTree = "<group>"; };
 		F768C173AC32106E22037F17 /* SampleCode.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = SampleCode.xcconfig; path = Configuration/SampleCode.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -71,6 +73,7 @@
 			children = (
 				28C69F48204F6ACA00949F30 /* AppDelegate.swift */,
 				28C69F4A204F6ACA00949F30 /* ViewController.swift */,
+				DE64065B2CD823B100CFCCCD /* BodyViewController.swift */,
 				28C69F4C204F6ACA00949F30 /* Main.storyboard */,
 				28C69F4F204F6ACA00949F30 /* Assets.xcassets */,
 				28C69F51204F6ACA00949F30 /* LaunchScreen.storyboard */,
@@ -164,6 +167,7 @@
 			files = (
 				28C69F4B204F6ACA00949F30 /* ViewController.swift in Sources */,
 				28C69F49204F6ACA00949F30 /* AppDelegate.swift in Sources */,
+				DE64065C2CD823B100CFCCCD /* BodyViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -313,14 +317,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4HRM3PXTG7;
+				DEVELOPMENT_TEAM = 4Q6AW7CYGJ;
 				INFOPLIST_FILE = "$(SRCROOT)/VisionFaceTrack/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = FlippedModule3;
+				PRODUCT_BUNDLE_IDENTIFIER = FlippedModule313;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -334,14 +338,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4HRM3PXTG7;
+				DEVELOPMENT_TEAM = 4Q6AW7CYGJ;
 				INFOPLIST_FILE = "$(SRCROOT)/VisionFaceTrack/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = FlippedModule3;
+				PRODUCT_BUNDLE_IDENTIFIER = FlippedModule313;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

@@ -9,11 +9,217 @@ import UIKit
 import AVKit
 import Vision
 
+class ViewController: UIViewController{
+    
+    // Main view for showing camera content.
+    @IBOutlet weak var previewView: UIView?
+    
+    @IBOutlet weak var gazeSlider: UISlider!
+    // AVCapture variables to hold sequence data
+    var session: AVCaptureSession?
+    var previewLayer: AVCaptureVideoPreviewLayer?
+    
+    var videoDataOutput: AVCaptureVideoDataOutput?
+    var videoDataOutputQueue: DispatchQueue?
+    
+    var captureDevice: AVCaptureDevice?
+    var captureDeviceResolution: CGSize = CGSize()
+    
+    // Layer UI for drawing Vision results
+    var rootLayer: CALayer?
+    var detectionOverlayLayer: CALayer?
+    var detectedFaceRectangleShapeLayer: CAShapeLayer?
+    var detectedFaceLandmarksShapeLayer: CAShapeLayer?
+    
+    // Vision requests
+    private var bodyPoseRequest = VNDetectFaceRectanglesRequest()
+    lazy var sequenceRequestHandler = VNSequenceRequestHandler()
+    
+    
+    // Left Eye Extrema
+    var leftEyeX: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
+    var leftEyeY: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
+    
+    // isBlinking
+
+    var isBlinking: Bool = false
+    
+    // MARK: UIViewController overrides
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // setup video for high resolution, drop frames when busy, and front camera
+        self.session = self.setupAVCaptureSession()
+        
+        // setup the vision objects for (1) detection and (2) tracking
+        self.prepareVisionRequest()
+        
+        // start the capture session and get processing a face!
+        self.session?.startRunning()
+    }
+    
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+    }
+    
+    // Ensure that the interface stays locked in Portrait.
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        return .portrait
+    }
+    
+    // Ensure that the interface stays locked in Portrait.
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
+        return .portrait
+    }
+    
+    
+    
+    // MARK: Performing Vision Requests
+    
+    /// - Tag: WriteCompletionHandler
+    fileprivate func prepareVisionRequest() {
+        
+        self.trackingRequests = []
+        
+        // create a detection request that processes an image and returns face features
+        // completion handler does not run immediately, it is run
+        // after a face is detected
+        let faceDetectionRequest:VNDetectFaceRectanglesRequest = VNDetectFaceRectanglesRequest(completionHandler: self.faceDetectionCompletionHandler)
+        
+        // Save this detection request for later processing
+        self.detectionRequests = [faceDetectionRequest]
+        
+        // setup the tracking of a sequence of features from detection
+        self.sequenceRequestHandler = VNSequenceRequestHandler()
+        
+        // setup drawing layers for showing output of face detection
+        self.setupVisionDrawingLayers()
+    }
+    
+    // define behavior for when we detect a face
+    func faceDetectionCompletionHandler(request:VNRequest, error: Error?){
+        // any errors? If yes, show and try to keep going
+        if error != nil {
+            print("FaceDetection error: \(String(describing: error)).")
+        }
+        
+        // see if we can get any face features, this will fail if no faces detected
+        // try to save the face observations to a results vector
+        guard let faceDetectionRequest = request as? VNDetectFaceRectanglesRequest,
+            let results = faceDetectionRequest.results as? [VNFaceObservation] else {
+                return
+        }
+        
+        if !results.isEmpty{
+            print("Initial Face found... setting up tracking.")
+            
+            
+        }
+        
+        // if we got here, then a face was detected and we have its features saved
+        // The above face detection was the most computational part of what we did
+        // the remaining tracking only needs the results vector of face features
+        // so we can process it in the main queue (because we will us it to update UI)
+        DispatchQueue.main.async {
+            // Add the face features to the tracking list
+            for observation in results {
+                let faceTrackingRequest = VNTrackObjectRequest(detectedObjectObservation: observation)
+                // the array starts empty, but this will constantly add to it
+                // since on the main queue, there are no race conditions
+                // everything is from a single thread
+                // once we add this, it kicks off tracking in another function
+                self.trackingRequests?.append(faceTrackingRequest)
+                
+                // NOTE: if the initial face detection is actually not a face,
+                // then the app will continually mess up trying to perform tracking
+            }
+        }
+        
+    }
+    
+    
+    // MARK: AVCaptureVideoDataOutputSampleBufferDelegate
+    /// - Tag: PerformRequests
+    // Handle delegate method callback on receiving a sample buffer.
+    // This is where we get the pixel buffer from the camera and need to
+    // generate the vision requests
+    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
+    {
+        
+        var requestHandlerOptions: [VNImageOption: AnyObject] = [:]
+        
+        // see if camera has any instrinsic transforms on it
+        // if it does, add these to the options for requests
+        let cameraIntrinsicData = CMGetAttachment(sampleBuffer, key: kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix, attachmentModeOut: nil)
+        if cameraIntrinsicData != nil {
+            requestHandlerOptions[VNImageOption.cameraIntrinsics] = cameraIntrinsicData
+        }
+        
+        // check to see if we can get the pixels for processing, else return
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            print("Failed to obtain a CVPixelBuffer for the current output frame.")
+            return
+        }
+        
+        // get portrait orientation for UI
+        let exifOrientation = self.exifOrientationForCurrentDeviceOrientation()
+        
+        guard let requests = self.trackingRequests else {
+            print("Tracking request array not setup, aborting.")
+            return
+        }
+        
+        
+        // check to see if the tracking request is empty (no face currently detected)
+        // if it is empty,
+        if requests.isEmpty{
+            // No tracking object detected, so perform initial detection
+            // the initial detection takes some time to perform
+            // so we special case it here
+            
+            self.performInitialDetection(pixelBuffer: pixelBuffer,
+                                         exifOrientation: exifOrientation,
+                                         requestHandlerOptions: requestHandlerOptions)
+            
+            return  // just perform the initial request
+        }
+        
+        // if tracking was not empty, it means we have detected a face very recently
+        // so no we can process the sequence of tracking face features
+        
+        self.performTracking(requests: requests,
+                             pixelBuffer: pixelBuffer,
+                             exifOrientation: exifOrientation)
+        
+        
+        // if there are no valid observations, then this will be empty
+        // the function above will empty out all the elements
+        // in our tracking if nothing is high confidence in the output
+        if let newTrackingRequests = self.trackingRequests {
+            
+            if newTrackingRequests.isEmpty {
+                // Nothing was high enough confidence to track, just abort.
+                print("Face object lost, resetting detection...")
+                return
+            }
+            
+            self.performLandmarkDetection(newTrackingRequests: newTrackingRequests,
+                                          pixelBuffer: pixelBuffer,
+                                          exifOrientation: exifOrientation,
+                                          requestHandlerOptions: requestHandlerOptions)
+            
+        }
+        
+        
+    }
+
 class ViewController: UIViewController {
     
     // Main view for showing camera content.
     @IBOutlet weak var previewView: UIView?
     
+    @IBOutlet weak var gazeSlider: UISlider!
     // AVCapture variables to hold sequence data
     var session: AVCaptureSession?
     var previewLayer: AVCaptureVideoPreviewLayer?
@@ -41,6 +247,7 @@ class ViewController: UIViewController {
     var leftEyeY: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
     
     // isBlinking
+
     var isBlinking: Bool = false
     
     // MARK: UIViewController overrides
@@ -168,7 +375,7 @@ class ViewController: UIViewController {
             print("Tracking request array not setup, aborting.")
             return
         }
-
+        
         
         // check to see if the tracking request is empty (no face currently detected)
         // if it is empty,
@@ -202,14 +409,14 @@ class ViewController: UIViewController {
                 print("Face object lost, resetting detection...")
                 return
             }
-
+            
             self.performLandmarkDetection(newTrackingRequests: newTrackingRequests,
                                           pixelBuffer: pixelBuffer,
                                           exifOrientation: exifOrientation,
                                           requestHandlerOptions: requestHandlerOptions)
-  
+            
         }
-    
+        
         
     }
     
@@ -268,7 +475,7 @@ class ViewController: UIViewController {
                         trackingRequest.inputObservation = observation
                     }
                     else {
-
+                        
                         // once below thresh, make it last frame
                         // this will stop the processing of tracker
                         trackingRequest.isLastFrame = true
@@ -322,6 +529,8 @@ class ViewController: UIViewController {
                 } catch let error as NSError {
                     NSLog("Failed to perform FaceLandmarkRequest: %@", error)
                 }
+                
+                
             }
         }
     }
@@ -341,7 +550,9 @@ class ViewController: UIViewController {
             return
         }
         
-        // Flipped Module part 1.1, 1.2, 1.3
+
+        // Flipped Module Part 1.1, 1.2, 1.3
+
         // The points of the landmarks are normalized to be resolution independent. By putting the coordinates of the landmarks on a scale of 0.0-1.0, they are easily translatable across various resolutions. The points are normalized to the dimensions of the face observation's bounding box
         for observation in results {
             if let landmarks = observation.landmarks {
@@ -353,11 +564,14 @@ class ViewController: UIViewController {
                     let minY = leftEyePoints.map { $0.y}.min() ?? 0.0
                     let maxY = leftEyePoints.map { $0.y}.max() ?? 0.0
                     
+
                     var currentDiff:CGFloat = maxY-minY
+
                     
                     // Flipped Module part 2.1
                     
                     // This is the current difference between your left eye's Y max and Y min.
+
                     print("Current Y Difference: \(currentDiff)")
                     
                     print("Left Eye - Min X: \(minX), Max X: \(maxX), Min Y: \(minY), Max Y: \(maxY)")
@@ -368,18 +582,22 @@ class ViewController: UIViewController {
                     if maxY > leftEyeY.max { leftEyeY.max = maxY }
                     
                     // Global Y axis difference
+
                     print("Greatest Y Difference: \(leftEyeY.max-leftEyeY.min)")
                     
                     // If the difference is below a finetuned threshold, then set the property isBlinking to true
+
                     if currentDiff <= 0.038 {
                         self.isBlinking = true
                     }else{
                         self.isBlinking = false
                     }
+
                     // Printing for debugging and ease of use
                     print("Is Blinking: \(self.isBlinking)")
                     
                 }
+
             }
         }
         
@@ -387,189 +605,192 @@ class ViewController: UIViewController {
         DispatchQueue.main.async {
             // draw the landmarks using core animation layers
             self.drawFaceObservations(results)
-        }
-    }
-    
-    
-}
-
-
-// MARK: Helper Methods
-extension UIViewController{
-    
-    // Helper Methods for Error Presentation
-    
-    fileprivate func presentErrorAlert(withTitle title: String = "Unexpected Failure", message: String) {
-        let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        self.present(alertController, animated: true)
-    }
-    
-    fileprivate func presentError(_ error: NSError) {
-        self.presentErrorAlert(withTitle: "Failed with error \(error.code)", message: error.localizedDescription)
-    }
-    
-    // Helper Methods for Handling Device Orientation & EXIF
-    
-    fileprivate func radiansForDegrees(_ degrees: CGFloat) -> CGFloat {
-        return CGFloat(Double(degrees) * Double.pi / 180.0)
-    }
-    
-    func exifOrientationForDeviceOrientation(_ deviceOrientation: UIDeviceOrientation) -> CGImagePropertyOrientation {
-        
-        switch deviceOrientation {
-        case .portraitUpsideDown:
-            return .rightMirrored
-            
-        case .landscapeLeft:
-            return .downMirrored
-            
-        case .landscapeRight:
-            return .upMirrored
-            
-        default:
-            return .leftMirrored
-        }
-    }
-    
-    func exifOrientationForCurrentDeviceOrientation() -> CGImagePropertyOrientation {
-        return exifOrientationForDeviceOrientation(UIDevice.current.orientation)
-    }
-}
-
-
-// MARK: Extension for AVCapture Setup
-extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
-    
-    
-    /// - Tag: CreateCaptureSession
-    fileprivate func setupAVCaptureSession() -> AVCaptureSession? {
-        let captureSession = AVCaptureSession()
-        do {
-            let inputDevice = try self.configureFrontCamera(for: captureSession)
-            self.configureVideoDataOutput(for: inputDevice.device, resolution: inputDevice.resolution, captureSession: captureSession)
-            self.designatePreviewLayer(for: captureSession)
-            return captureSession
-        } catch let executionError as NSError {
-            self.presentError(executionError)
-        } catch {
-            self.presentErrorAlert(message: "An unexpected failure has occured")
-        }
-        
-        self.teardownAVCapture()
-        
-        return nil
-    }
-    
-    /// - Tag: ConfigureDeviceResolution
-    fileprivate func highestResolution420Format(for device: AVCaptureDevice) -> (format: AVCaptureDevice.Format, resolution: CGSize)? {
-        var highestResolutionFormat: AVCaptureDevice.Format? = nil
-        var highestResolutionDimensions = CMVideoDimensions(width: 0, height: 0)
-        
-        for format in device.formats {
-            let deviceFormat = format as AVCaptureDevice.Format
-            
-            let deviceFormatDescription = deviceFormat.formatDescription
-            if CMFormatDescriptionGetMediaSubType(deviceFormatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
-                let candidateDimensions = CMVideoFormatDescriptionGetDimensions(deviceFormatDescription)
-                if (highestResolutionFormat == nil) || (candidateDimensions.width > highestResolutionDimensions.width) {
-                    highestResolutionFormat = deviceFormat
-                    highestResolutionDimensions = candidateDimensions
-                }
+            if !self.isBlinking{
+                self.gazeSlider.setValue(Float(self.detectGazeDirection(in: results.first!)!), animated: true)
             }
         }
-        
-        if highestResolutionFormat != nil {
-            let resolution = CGSize(width: CGFloat(highestResolutionDimensions.width), height: CGFloat(highestResolutionDimensions.height))
-            return (highestResolutionFormat!, resolution)
         }
         
-        return nil
+        
     }
     
-    fileprivate func configureFrontCamera(for captureSession: AVCaptureSession) throws -> (device: AVCaptureDevice, resolution: CGSize) {
-        let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .front)
+    
+    // MARK: Helper Methods
+    extension UIViewController{
         
-        if let device = deviceDiscoverySession.devices.first {
-            if let deviceInput = try? AVCaptureDeviceInput(device: device) {
-                if captureSession.canAddInput(deviceInput) {
-                    captureSession.addInput(deviceInput)
-                }
+        // Helper Methods for Error Presentation
+        
+        fileprivate func presentErrorAlert(withTitle title: String = "Unexpected Failure", message: String) {
+            let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            self.present(alertController, animated: true)
+        }
+        
+        fileprivate func presentError(_ error: NSError) {
+            self.presentErrorAlert(withTitle: "Failed with error \(error.code)", message: error.localizedDescription)
+        }
+        
+        // Helper Methods for Handling Device Orientation & EXIF
+        
+        fileprivate func radiansForDegrees(_ degrees: CGFloat) -> CGFloat {
+            return CGFloat(Double(degrees) * Double.pi / 180.0)
+        }
+        
+        func exifOrientationForDeviceOrientation(_ deviceOrientation: UIDeviceOrientation) -> CGImagePropertyOrientation {
+            
+            switch deviceOrientation {
+            case .portraitUpsideDown:
+                return .rightMirrored
                 
-                if let highestResolution = self.highestResolution420Format(for: device) {
-                    try device.lockForConfiguration()
-                    device.activeFormat = highestResolution.format
-                    device.unlockForConfiguration()
-                    
-                    return (device, highestResolution.resolution)
+            case .landscapeLeft:
+                return .downMirrored
+                
+            case .landscapeRight:
+                return .upMirrored
+                
+            default:
+                return .leftMirrored
+            }
+        }
+        
+        func exifOrientationForCurrentDeviceOrientation() -> CGImagePropertyOrientation {
+            return exifOrientationForDeviceOrientation(UIDevice.current.orientation)
+        }
+    }
+    
+    
+    // MARK: Extension for AVCapture Setup
+    extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
+        
+        
+        /// - Tag: CreateCaptureSession
+        fileprivate func setupAVCaptureSession() -> AVCaptureSession? {
+            let captureSession = AVCaptureSession()
+            do {
+                let inputDevice = try self.configureFrontCamera(for: captureSession)
+                self.configureVideoDataOutput(for: inputDevice.device, resolution: inputDevice.resolution, captureSession: captureSession)
+                self.designatePreviewLayer(for: captureSession)
+                return captureSession
+            } catch let executionError as NSError {
+                self.presentError(executionError)
+            } catch {
+                self.presentErrorAlert(message: "An unexpected failure has occured")
+            }
+            
+            self.teardownAVCapture()
+            
+            return nil
+        }
+        
+        /// - Tag: ConfigureDeviceResolution
+        fileprivate func highestResolution420Format(for device: AVCaptureDevice) -> (format: AVCaptureDevice.Format, resolution: CGSize)? {
+            var highestResolutionFormat: AVCaptureDevice.Format? = nil
+            var highestResolutionDimensions = CMVideoDimensions(width: 0, height: 0)
+            
+            for format in device.formats {
+                let deviceFormat = format as AVCaptureDevice.Format
+                
+                let deviceFormatDescription = deviceFormat.formatDescription
+                if CMFormatDescriptionGetMediaSubType(deviceFormatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
+                    let candidateDimensions = CMVideoFormatDescriptionGetDimensions(deviceFormatDescription)
+                    if (highestResolutionFormat == nil) || (candidateDimensions.width > highestResolutionDimensions.width) {
+                        highestResolutionFormat = deviceFormat
+                        highestResolutionDimensions = candidateDimensions
+                    }
                 }
             }
+            
+            if highestResolutionFormat != nil {
+                let resolution = CGSize(width: CGFloat(highestResolutionDimensions.width), height: CGFloat(highestResolutionDimensions.height))
+                return (highestResolutionFormat!, resolution)
+            }
+            
+            return nil
         }
         
-        throw NSError(domain: "ViewController", code: 1, userInfo: nil)
-    }
-    
-    /// - Tag: CreateSerialDispatchQueue
-    fileprivate func configureVideoDataOutput(for inputDevice: AVCaptureDevice, resolution: CGSize, captureSession: AVCaptureSession) {
-        
-        let videoDataOutput = AVCaptureVideoDataOutput()
-        videoDataOutput.alwaysDiscardsLateVideoFrames = true
-        
-        // Create a serial dispatch queue used for the sample buffer delegate as well as when a still image is captured.
-        // A serial dispatch queue must be used to guarantee that video frames will be delivered in order.
-        let videoDataOutputQueue = DispatchQueue(label: "com.example.apple-samplecode.VisionFaceTrack")
-        videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
-        
-        if captureSession.canAddOutput(videoDataOutput) {
-            captureSession.addOutput(videoDataOutput)
+        fileprivate func configureFrontCamera(for captureSession: AVCaptureSession) throws -> (device: AVCaptureDevice, resolution: CGSize) {
+            let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .front)
+            
+            if let device = deviceDiscoverySession.devices.first {
+                if let deviceInput = try? AVCaptureDeviceInput(device: device) {
+                    if captureSession.canAddInput(deviceInput) {
+                        captureSession.addInput(deviceInput)
+                    }
+                    
+                    if let highestResolution = self.highestResolution420Format(for: device) {
+                        try device.lockForConfiguration()
+                        device.activeFormat = highestResolution.format
+                        device.unlockForConfiguration()
+                        
+                        return (device, highestResolution.resolution)
+                    }
+                }
+            }
+            
+            throw NSError(domain: "ViewController", code: 1, userInfo: nil)
         }
         
-        videoDataOutput.connection(with: .video)?.isEnabled = true
+        /// - Tag: CreateSerialDispatchQueue
+        fileprivate func configureVideoDataOutput(for inputDevice: AVCaptureDevice, resolution: CGSize, captureSession: AVCaptureSession) {
+            
+            let videoDataOutput = AVCaptureVideoDataOutput()
+            videoDataOutput.alwaysDiscardsLateVideoFrames = true
+            
+            // Create a serial dispatch queue used for the sample buffer delegate as well as when a still image is captured.
+            // A serial dispatch queue must be used to guarantee that video frames will be delivered in order.
+            let videoDataOutputQueue = DispatchQueue(label: "com.example.apple-samplecode.VisionFaceTrack")
+            videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
+            
+            if captureSession.canAddOutput(videoDataOutput) {
+                captureSession.addOutput(videoDataOutput)
+            }
+            
+            videoDataOutput.connection(with: .video)?.isEnabled = true
+            
+            if let captureConnection = videoDataOutput.connection(with: AVMediaType.video) {
+                if captureConnection.isCameraIntrinsicMatrixDeliverySupported {
+                    captureConnection.isCameraIntrinsicMatrixDeliveryEnabled = true
+                }
+            }
+            
+            self.videoDataOutput = videoDataOutput
+            self.videoDataOutputQueue = videoDataOutputQueue
+            
+            self.captureDevice = inputDevice
+            self.captureDeviceResolution = resolution
+        }
         
-        if let captureConnection = videoDataOutput.connection(with: AVMediaType.video) {
-            if captureConnection.isCameraIntrinsicMatrixDeliverySupported {
-                captureConnection.isCameraIntrinsicMatrixDeliveryEnabled = true
+        /// - Tag: DesignatePreviewLayer
+        fileprivate func designatePreviewLayer(for captureSession: AVCaptureSession) {
+            let videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+            self.previewLayer = videoPreviewLayer
+            
+            videoPreviewLayer.name = "CameraPreview"
+            videoPreviewLayer.backgroundColor = UIColor.black.cgColor
+            videoPreviewLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
+            
+            if let previewRootLayer = self.previewView?.layer {
+                self.rootLayer = previewRootLayer
+                
+                previewRootLayer.masksToBounds = true
+                videoPreviewLayer.frame = previewRootLayer.bounds
+                previewRootLayer.addSublayer(videoPreviewLayer)
             }
         }
         
-        self.videoDataOutput = videoDataOutput
-        self.videoDataOutputQueue = videoDataOutputQueue
-        
-        self.captureDevice = inputDevice
-        self.captureDeviceResolution = resolution
-    }
-    
-    /// - Tag: DesignatePreviewLayer
-    fileprivate func designatePreviewLayer(for captureSession: AVCaptureSession) {
-        let videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        self.previewLayer = videoPreviewLayer
-        
-        videoPreviewLayer.name = "CameraPreview"
-        videoPreviewLayer.backgroundColor = UIColor.black.cgColor
-        videoPreviewLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
-        
-        if let previewRootLayer = self.previewView?.layer {
-            self.rootLayer = previewRootLayer
+        // Removes infrastructure for AVCapture as part of cleanup.
+        fileprivate func teardownAVCapture() {
+            self.videoDataOutput = nil
+            self.videoDataOutputQueue = nil
             
-            previewRootLayer.masksToBounds = true
-            videoPreviewLayer.frame = previewRootLayer.bounds
-            previewRootLayer.addSublayer(videoPreviewLayer)
+            if let previewLayer = self.previewLayer {
+                previewLayer.removeFromSuperlayer()
+                self.previewLayer = nil
+            }
         }
     }
     
-    // Removes infrastructure for AVCapture as part of cleanup.
-    fileprivate func teardownAVCapture() {
-        self.videoDataOutput = nil
-        self.videoDataOutputQueue = nil
-        
-        if let previewLayer = self.previewLayer {
-            previewLayer.removeFromSuperlayer()
-            self.previewLayer = nil
-        }
-    }
-}
-
-
-// MARK: Extension Drawing Vision Observations
+    
+    // MARK: Extension Drawing Vision Observations
 extension ViewController {
     
     
@@ -633,9 +854,9 @@ extension ViewController {
     
     fileprivate func updateLayerGeometry() {
         guard let overlayLayer = self.detectionOverlayLayer,
-            let rootLayer = self.rootLayer,
-            let previewLayer = self.previewLayer
-            else {
+              let rootLayer = self.rootLayer,
+              let previewLayer = self.previewLayer
+        else {
             return
         }
         
@@ -733,8 +954,8 @@ extension ViewController {
     /// - Tag: DrawPaths
     fileprivate func drawFaceObservations(_ faceObservations: [VNFaceObservation]) {
         guard let faceRectangleShapeLayer = self.detectedFaceRectangleShapeLayer,
-            let faceLandmarksShapeLayer = self.detectedFaceLandmarksShapeLayer
-            else {
+              let faceLandmarksShapeLayer = self.detectedFaceLandmarksShapeLayer
+        else {
             return
         }
         
@@ -759,32 +980,65 @@ extension ViewController {
         CATransaction.commit()
     }
     
-    //Flipped module part 3.1 getting leftPupil landmark and getting min x value 
-    func detectGazeDirection(in faceObservation: VNFaceObservation, isBlinking: Bool) -> CGFloat? {
-        //can only run if isBlinking is false
-        guard !isBlinking, let landmarks = faceObservation.landmarks else { return nil }
-        
-        // Access the leftPupil landmark
-        guard let leftPupil = landmarks.leftPupil else {
-            print("Left pupil landmark not found")
-            return nil
-        }
-        
-        // Calculate the minimum x value
-        let minXValue = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
-
-       
-        let gazeDirection = minXValue
-
-        // Print or return gaze direction for further usage
-        print("Gaze direction (based on left pupil x): \(gazeDirection)")
-        return gazeDirection
-    }
     
-    
-}
-
-
+     //Flipped module part 3.1 getting leftPupil landmark and getting min x value
+     func detectGazeDirection(in faceObservation: VNFaceObservation) -> CGFloat? {
+     
+     var leftOfEye = 0.0
+     var rightOfEye = 0.0
+     var currentDiff = 1.0
+     // If no observations then return a default of 0.5
+     guard let landmarks = faceObservation.landmarks else { return 0.5}
+     
+     // Access the left eye. Use the space between the left and right sides of the eye to know the area the pupil should be within.
+     if let leftEye = landmarks.leftEye {
+     let leftEyePoints = leftEye.normalizedPoints
+     
+     leftOfEye = leftEyePoints.map { $0.x}.min() ?? 0.0
+     rightOfEye = leftEyePoints.map { $0.x}.max() ?? 0.0
+     
+     currentDiff = rightOfEye - leftOfEye
+     }
+     
+     // Access the leftPupil landmark. If the pupil is not found then set the label to the default 0.5.
+     guard let leftPupil = landmarks.leftPupil else {
+     print("Left pupil landmark not found")
+     return 0.5
+     }
+     
+     // Calculate the minimum x value
+     let minXLeftPupil = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
+     let maxXLeftPupil = leftPupil.normalizedPoints.map { $0.x }.max() ?? 0.0
+     let avgXPupil = (((minXLeftPupil - leftOfEye) / currentDiff) + ((maxXLeftPupil - leftOfEye) / currentDiff)) / 2
+     
+     
+     
+     
+     // If the avg area of the pupil is between left of 0.4 then only use the left of the pupil to return the gaze direction. If the avg area of the pupil is right of 0.6 then only use the right of the pupil to return the gaze direction. Between 0.4 and 0.6 just use the average of the 2. This means there will be a slight jump at 0.4 and 0.6.
+     
+     if (avgXPupil < 0.4) {
+     let gazeDirection = (minXLeftPupil - leftOfEye) / currentDiff
+     print("Gaze direction (based on left pupil x): \(gazeDirection)")
+     return gazeDirection
+     }
+     if (avgXPupil > 0.6) {
+     let gazeDirection = (maxXLeftPupil - leftOfEye) / currentDiff
+     print("Gaze direction (based on left pupil x): \(gazeDirection)")
+     return gazeDirection
+     }
+     let gazeDirection = avgXPupil
+     
+     // Print or return gaze direction for further usage
+     print("Gaze direction (based on left pupil x): \(gazeDirection)")
+     //self.gazeSlider.setValue(Float(gazeDirection), animated: true)
+     return gazeDirection
+     }
+     
+     
+     
+     }
+     
+     
 
 
 
