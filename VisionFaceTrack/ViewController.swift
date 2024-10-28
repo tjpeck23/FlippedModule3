@@ -108,8 +108,8 @@ class ViewController: UIViewController {
         // see if we can get any face features, this will fail if no faces detected
         // try to save the face observations to a results vector
         guard let faceDetectionRequest = request as? VNDetectFaceRectanglesRequest,
-              let results = faceDetectionRequest.results as? [VNFaceObservation] else {
-            return
+            let results = faceDetectionRequest.results as? [VNFaceObservation] else {
+                return
         }
         
         if !results.isEmpty{
@@ -145,7 +145,7 @@ class ViewController: UIViewController {
     // Handle delegate method callback on receiving a sample buffer.
     // This is where we get the pixel buffer from the camera and need to
     // generate the vision requests
-    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
+    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) 
     {
         
         var requestHandlerOptions: [VNImageOption: AnyObject] = [:]
