@@ -398,8 +398,9 @@ class ViewController: UIViewController {
         DispatchQueue.main.async {
             // draw the landmarks using core animation layers
             self.drawFaceObservations(results)
-            //self.gazeSlider.setValue(Float(detectGazeDirection(in: observation, isBlinking: self.isBlinking)!), animated: true)        }
-            self.gazeSlider.setValue(Float(self.detectGazeDirection(in: results.first!, isBlinking: self.isBlinking)!), animated: true)
+            if !self.isBlinking{
+                self.gazeSlider.setValue(Float(self.detectGazeDirection(in: results.first!)!), animated: true)
+            }
         }
         }
         
@@ -773,13 +774,13 @@ class ViewController: UIViewController {
         }
         
         //Flipped module part 3.1 getting leftPupil landmark and getting min x value
-        func detectGazeDirection(in faceObservation: VNFaceObservation, isBlinking: Bool) -> CGFloat? {
+        func detectGazeDirection(in faceObservation: VNFaceObservation) -> CGFloat? {
             
             var leftOfEye = 0.0
             var rightOfEye = 0.0
             var currentDiff = 1.0
-            //can only run if isBlinking is false, if they are blinking set label to 0.5 because they are neither looking left nor right
-            guard !isBlinking, let landmarks = faceObservation.landmarks else { return 0.5}
+            // If no observations then return a default of 0.5
+            guard let landmarks = faceObservation.landmarks else { return 0.5}
             
             // Access the left eye. Use the space between the left and right sides of the eye to know the area the pupil should be within.
             if let leftEye = landmarks.leftEye {
@@ -805,14 +806,14 @@ class ViewController: UIViewController {
                 
 
             
-            // If the avg area of the pupil is between left of 0.3 then only use the left of the pupil to return the gaze direction. If the avg area of the pupil is right of 0.7 then only use the right of the pupil to return the gaze direction. Between 0.3 and 0.7 just use the average of the 2. This means there will be a slight jump at 0.3 and 0.7.
+            // If the avg area of the pupil is between left of 0.4 then only use the left of the pupil to return the gaze direction. If the avg area of the pupil is right of 0.6 then only use the right of the pupil to return the gaze direction. Between 0.4 and 0.6 just use the average of the 2. This means there will be a slight jump at 0.4 and 0.6.
             
-            if (avgXPupil < 0.3) {
+            if (avgXPupil < 0.4) {
                 let gazeDirection = (minXLeftPupil - leftOfEye) / currentDiff
                 print("Gaze direction (based on left pupil x): \(gazeDirection)")
                 return gazeDirection
             }
-            if (avgXPupil > 0.7) {
+            if (avgXPupil > 0.6) {
                 let gazeDirection = (maxXLeftPupil - leftOfEye) / currentDiff
                 print("Gaze direction (based on left pupil x): \(gazeDirection)")
                 return gazeDirection
