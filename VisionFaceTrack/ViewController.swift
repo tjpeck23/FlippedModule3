@@ -14,6 +14,7 @@ class ViewController: UIViewController {
     // Main view for showing camera content.
     @IBOutlet weak var previewView: UIView?
     
+    @IBOutlet weak var gazeSlider: UISlider!
     // AVCapture variables to hold sequence data
     var session: AVCaptureSession?
     var previewLayer: AVCaptureVideoPreviewLayer?
@@ -41,6 +42,7 @@ class ViewController: UIViewController {
     var leftEyeY: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
     
     // isBlinking
+
     var isBlinking: Bool = false
     
     // MARK: UIViewController overrides
@@ -168,7 +170,7 @@ class ViewController: UIViewController {
             print("Tracking request array not setup, aborting.")
             return
         }
-
+        
         
         // check to see if the tracking request is empty (no face currently detected)
         // if it is empty,
@@ -202,14 +204,14 @@ class ViewController: UIViewController {
                 print("Face object lost, resetting detection...")
                 return
             }
-
+            
             self.performLandmarkDetection(newTrackingRequests: newTrackingRequests,
                                           pixelBuffer: pixelBuffer,
                                           exifOrientation: exifOrientation,
                                           requestHandlerOptions: requestHandlerOptions)
-  
+            
         }
-    
+        
         
     }
     
@@ -268,7 +270,7 @@ class ViewController: UIViewController {
                         trackingRequest.inputObservation = observation
                     }
                     else {
-
+                        
                         // once below thresh, make it last frame
                         // this will stop the processing of tracker
                         trackingRequest.isLastFrame = true
@@ -322,6 +324,8 @@ class ViewController: UIViewController {
                 } catch let error as NSError {
                     NSLog("Failed to perform FaceLandmarkRequest: %@", error)
                 }
+                
+                
             }
         }
     }
@@ -341,7 +345,9 @@ class ViewController: UIViewController {
             return
         }
         
-        // Flipped Module part 1.1, 1.2, 1.3
+
+        // Flipped Module Part 1.1, 1.2, 1.3
+
         // The points of the landmarks are normalized to be resolution independent. By putting the coordinates of the landmarks on a scale of 0.0-1.0, they are easily translatable across various resolutions. The points are normalized to the dimensions of the face observation's bounding box
         for observation in results {
             if let landmarks = observation.landmarks {
@@ -353,11 +359,14 @@ class ViewController: UIViewController {
                     let minY = leftEyePoints.map { $0.y}.min() ?? 0.0
                     let maxY = leftEyePoints.map { $0.y}.max() ?? 0.0
                     
+
                     var currentDiff:CGFloat = maxY-minY
+
                     
                     // Flipped Module part 2.1
                     
                     // This is the current difference between your left eye's Y max and Y min.
+
                     print("Current Y Difference: \(currentDiff)")
                     
                     print("Left Eye - Min X: \(minX), Max X: \(maxX), Min Y: \(minY), Max Y: \(maxY)")
@@ -368,18 +377,22 @@ class ViewController: UIViewController {
                     if maxY > leftEyeY.max { leftEyeY.max = maxY }
                     
                     // Global Y axis difference
+
                     print("Greatest Y Difference: \(leftEyeY.max-leftEyeY.min)")
                     
                     // If the difference is below a finetuned threshold, then set the property isBlinking to true
+
                     if currentDiff <= 0.038 {
                         self.isBlinking = true
                     }else{
                         self.isBlinking = false
                     }
+
                     // Printing for debugging and ease of use
                     print("Is Blinking: \(self.isBlinking)")
                     
                 }
+
             }
         }
         
@@ -387,403 +400,438 @@ class ViewController: UIViewController {
         DispatchQueue.main.async {
             // draw the landmarks using core animation layers
             self.drawFaceObservations(results)
-        }
-    }
-    
-    
-}
-
-
-// MARK: Helper Methods
-extension UIViewController{
-    
-    // Helper Methods for Error Presentation
-    
-    fileprivate func presentErrorAlert(withTitle title: String = "Unexpected Failure", message: String) {
-        let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        self.present(alertController, animated: true)
-    }
-    
-    fileprivate func presentError(_ error: NSError) {
-        self.presentErrorAlert(withTitle: "Failed with error \(error.code)", message: error.localizedDescription)
-    }
-    
-    // Helper Methods for Handling Device Orientation & EXIF
-    
-    fileprivate func radiansForDegrees(_ degrees: CGFloat) -> CGFloat {
-        return CGFloat(Double(degrees) * Double.pi / 180.0)
-    }
-    
-    func exifOrientationForDeviceOrientation(_ deviceOrientation: UIDeviceOrientation) -> CGImagePropertyOrientation {
-        
-        switch deviceOrientation {
-        case .portraitUpsideDown:
-            return .rightMirrored
-            
-        case .landscapeLeft:
-            return .downMirrored
-            
-        case .landscapeRight:
-            return .upMirrored
-            
-        default:
-            return .leftMirrored
-        }
-    }
-    
-    func exifOrientationForCurrentDeviceOrientation() -> CGImagePropertyOrientation {
-        return exifOrientationForDeviceOrientation(UIDevice.current.orientation)
-    }
-}
-
-
-// MARK: Extension for AVCapture Setup
-extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
-    
-    
-    /// - Tag: CreateCaptureSession
-    fileprivate func setupAVCaptureSession() -> AVCaptureSession? {
-        let captureSession = AVCaptureSession()
-        do {
-            let inputDevice = try self.configureFrontCamera(for: captureSession)
-            self.configureVideoDataOutput(for: inputDevice.device, resolution: inputDevice.resolution, captureSession: captureSession)
-            self.designatePreviewLayer(for: captureSession)
-            return captureSession
-        } catch let executionError as NSError {
-            self.presentError(executionError)
-        } catch {
-            self.presentErrorAlert(message: "An unexpected failure has occured")
-        }
-        
-        self.teardownAVCapture()
-        
-        return nil
-    }
-    
-    /// - Tag: ConfigureDeviceResolution
-    fileprivate func highestResolution420Format(for device: AVCaptureDevice) -> (format: AVCaptureDevice.Format, resolution: CGSize)? {
-        var highestResolutionFormat: AVCaptureDevice.Format? = nil
-        var highestResolutionDimensions = CMVideoDimensions(width: 0, height: 0)
-        
-        for format in device.formats {
-            let deviceFormat = format as AVCaptureDevice.Format
-            
-            let deviceFormatDescription = deviceFormat.formatDescription
-            if CMFormatDescriptionGetMediaSubType(deviceFormatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
-                let candidateDimensions = CMVideoFormatDescriptionGetDimensions(deviceFormatDescription)
-                if (highestResolutionFormat == nil) || (candidateDimensions.width > highestResolutionDimensions.width) {
-                    highestResolutionFormat = deviceFormat
-                    highestResolutionDimensions = candidateDimensions
-                }
+            if !self.isBlinking{
+                self.gazeSlider.setValue(Float(self.detectGazeDirection(in: results.first!)!), animated: true)
             }
         }
-        
-        if highestResolutionFormat != nil {
-            let resolution = CGSize(width: CGFloat(highestResolutionDimensions.width), height: CGFloat(highestResolutionDimensions.height))
-            return (highestResolutionFormat!, resolution)
         }
         
-        return nil
+        
     }
     
-    fileprivate func configureFrontCamera(for captureSession: AVCaptureSession) throws -> (device: AVCaptureDevice, resolution: CGSize) {
-        let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .front)
+    
+    // MARK: Helper Methods
+    extension UIViewController{
         
-        if let device = deviceDiscoverySession.devices.first {
-            if let deviceInput = try? AVCaptureDeviceInput(device: device) {
-                if captureSession.canAddInput(deviceInput) {
-                    captureSession.addInput(deviceInput)
-                }
+        // Helper Methods for Error Presentation
+        
+        fileprivate func presentErrorAlert(withTitle title: String = "Unexpected Failure", message: String) {
+            let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            self.present(alertController, animated: true)
+        }
+        
+        fileprivate func presentError(_ error: NSError) {
+            self.presentErrorAlert(withTitle: "Failed with error \(error.code)", message: error.localizedDescription)
+        }
+        
+        // Helper Methods for Handling Device Orientation & EXIF
+        
+        fileprivate func radiansForDegrees(_ degrees: CGFloat) -> CGFloat {
+            return CGFloat(Double(degrees) * Double.pi / 180.0)
+        }
+        
+        func exifOrientationForDeviceOrientation(_ deviceOrientation: UIDeviceOrientation) -> CGImagePropertyOrientation {
+            
+            switch deviceOrientation {
+            case .portraitUpsideDown:
+                return .rightMirrored
                 
-                if let highestResolution = self.highestResolution420Format(for: device) {
-                    try device.lockForConfiguration()
-                    device.activeFormat = highestResolution.format
-                    device.unlockForConfiguration()
-                    
-                    return (device, highestResolution.resolution)
-                }
+            case .landscapeLeft:
+                return .downMirrored
+                
+            case .landscapeRight:
+                return .upMirrored
+                
+            default:
+                return .leftMirrored
             }
         }
         
-        throw NSError(domain: "ViewController", code: 1, userInfo: nil)
-    }
-    
-    /// - Tag: CreateSerialDispatchQueue
-    fileprivate func configureVideoDataOutput(for inputDevice: AVCaptureDevice, resolution: CGSize, captureSession: AVCaptureSession) {
-        
-        let videoDataOutput = AVCaptureVideoDataOutput()
-        videoDataOutput.alwaysDiscardsLateVideoFrames = true
-        
-        // Create a serial dispatch queue used for the sample buffer delegate as well as when a still image is captured.
-        // A serial dispatch queue must be used to guarantee that video frames will be delivered in order.
-        let videoDataOutputQueue = DispatchQueue(label: "com.example.apple-samplecode.VisionFaceTrack")
-        videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
-        
-        if captureSession.canAddOutput(videoDataOutput) {
-            captureSession.addOutput(videoDataOutput)
-        }
-        
-        videoDataOutput.connection(with: .video)?.isEnabled = true
-        
-        if let captureConnection = videoDataOutput.connection(with: AVMediaType.video) {
-            if captureConnection.isCameraIntrinsicMatrixDeliverySupported {
-                captureConnection.isCameraIntrinsicMatrixDeliveryEnabled = true
-            }
-        }
-        
-        self.videoDataOutput = videoDataOutput
-        self.videoDataOutputQueue = videoDataOutputQueue
-        
-        self.captureDevice = inputDevice
-        self.captureDeviceResolution = resolution
-    }
-    
-    /// - Tag: DesignatePreviewLayer
-    fileprivate func designatePreviewLayer(for captureSession: AVCaptureSession) {
-        let videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        self.previewLayer = videoPreviewLayer
-        
-        videoPreviewLayer.name = "CameraPreview"
-        videoPreviewLayer.backgroundColor = UIColor.black.cgColor
-        videoPreviewLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
-        
-        if let previewRootLayer = self.previewView?.layer {
-            self.rootLayer = previewRootLayer
-            
-            previewRootLayer.masksToBounds = true
-            videoPreviewLayer.frame = previewRootLayer.bounds
-            previewRootLayer.addSublayer(videoPreviewLayer)
+        func exifOrientationForCurrentDeviceOrientation() -> CGImagePropertyOrientation {
+            return exifOrientationForDeviceOrientation(UIDevice.current.orientation)
         }
     }
     
-    // Removes infrastructure for AVCapture as part of cleanup.
-    fileprivate func teardownAVCapture() {
-        self.videoDataOutput = nil
-        self.videoDataOutputQueue = nil
-        
-        if let previewLayer = self.previewLayer {
-            previewLayer.removeFromSuperlayer()
-            self.previewLayer = nil
-        }
-    }
-}
-
-
-// MARK: Extension Drawing Vision Observations
-extension ViewController {
     
-    
-    fileprivate func setupVisionDrawingLayers() {
-        let captureDeviceResolution = self.captureDeviceResolution
+    // MARK: Extension for AVCapture Setup
+    extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
         
-        let captureDeviceBounds = CGRect(x: 0,
-                                         y: 0,
-                                         width: captureDeviceResolution.width,
-                                         height: captureDeviceResolution.height)
         
-        let captureDeviceBoundsCenterPoint = CGPoint(x: captureDeviceBounds.midX,
-                                                     y: captureDeviceBounds.midY)
-        
-        let normalizedCenterPoint = CGPoint(x: 0.5, y: 0.5)
-        
-        guard let rootLayer = self.rootLayer else {
-            self.presentErrorAlert(message: "view was not property initialized")
-            return
-        }
-        
-        let overlayLayer = CALayer()
-        overlayLayer.name = "DetectionOverlay"
-        overlayLayer.masksToBounds = true
-        overlayLayer.anchorPoint = normalizedCenterPoint
-        overlayLayer.bounds = captureDeviceBounds
-        overlayLayer.position = CGPoint(x: rootLayer.bounds.midX, y: rootLayer.bounds.midY)
-        
-        let faceRectangleShapeLayer = CAShapeLayer()
-        faceRectangleShapeLayer.name = "RectangleOutlineLayer"
-        faceRectangleShapeLayer.bounds = captureDeviceBounds
-        faceRectangleShapeLayer.anchorPoint = normalizedCenterPoint
-        faceRectangleShapeLayer.position = captureDeviceBoundsCenterPoint
-        faceRectangleShapeLayer.fillColor = nil
-        faceRectangleShapeLayer.strokeColor = UIColor.green.withAlphaComponent(0.7).cgColor
-        faceRectangleShapeLayer.lineWidth = 5
-        faceRectangleShapeLayer.shadowOpacity = 0.7
-        faceRectangleShapeLayer.shadowRadius = 5
-        
-        let faceLandmarksShapeLayer = CAShapeLayer()
-        faceLandmarksShapeLayer.name = "FaceLandmarksLayer"
-        faceLandmarksShapeLayer.bounds = captureDeviceBounds
-        faceLandmarksShapeLayer.anchorPoint = normalizedCenterPoint
-        faceLandmarksShapeLayer.position = captureDeviceBoundsCenterPoint
-        faceLandmarksShapeLayer.fillColor = nil
-        faceLandmarksShapeLayer.strokeColor = UIColor.yellow.withAlphaComponent(0.7).cgColor
-        faceLandmarksShapeLayer.lineWidth = 3
-        faceLandmarksShapeLayer.shadowOpacity = 0.7
-        faceLandmarksShapeLayer.shadowRadius = 5
-        
-        overlayLayer.addSublayer(faceRectangleShapeLayer)
-        faceRectangleShapeLayer.addSublayer(faceLandmarksShapeLayer)
-        rootLayer.addSublayer(overlayLayer)
-        
-        self.detectionOverlayLayer = overlayLayer
-        self.detectedFaceRectangleShapeLayer = faceRectangleShapeLayer
-        self.detectedFaceLandmarksShapeLayer = faceLandmarksShapeLayer
-        
-        self.updateLayerGeometry()
-    }
-    
-    fileprivate func updateLayerGeometry() {
-        guard let overlayLayer = self.detectionOverlayLayer,
-            let rootLayer = self.rootLayer,
-            let previewLayer = self.previewLayer
-            else {
-            return
-        }
-        
-        CATransaction.setValue(NSNumber(value: true), forKey: kCATransactionDisableActions)
-        
-        let videoPreviewRect = previewLayer.layerRectConverted(fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
-        
-        var rotation: CGFloat
-        var scaleX: CGFloat
-        var scaleY: CGFloat
-        
-        // Rotate the layer into screen orientation.
-        switch UIDevice.current.orientation {
-        case .portraitUpsideDown:
-            rotation = 180
-            scaleX = videoPreviewRect.width / captureDeviceResolution.width
-            scaleY = videoPreviewRect.height / captureDeviceResolution.height
-            
-        case .landscapeLeft:
-            rotation = 90
-            scaleX = videoPreviewRect.height / captureDeviceResolution.width
-            scaleY = scaleX
-            
-        case .landscapeRight:
-            rotation = -90
-            scaleX = videoPreviewRect.height / captureDeviceResolution.width
-            scaleY = scaleX
-            
-        default:
-            rotation = 0
-            scaleX = videoPreviewRect.width / captureDeviceResolution.width
-            scaleY = videoPreviewRect.height / captureDeviceResolution.height
-        }
-        
-        // Scale and mirror the image to ensure upright presentation.
-        let affineTransform = CGAffineTransform(rotationAngle: radiansForDegrees(rotation))
-            .scaledBy(x: scaleX, y: -scaleY)
-        overlayLayer.setAffineTransform(affineTransform)
-        
-        // Cover entire screen UI.
-        let rootLayerBounds = rootLayer.bounds
-        overlayLayer.position = CGPoint(x: rootLayerBounds.midX, y: rootLayerBounds.midY)
-    }
-    
-    fileprivate func addPoints(in landmarkRegion: VNFaceLandmarkRegion2D, to path: CGMutablePath, applying affineTransform: CGAffineTransform, closingWhenComplete closePath: Bool) {
-        let pointCount = landmarkRegion.pointCount
-        if pointCount > 1 {
-            let points: [CGPoint] = landmarkRegion.normalizedPoints
-            path.move(to: points[0], transform: affineTransform)
-            path.addLines(between: points, transform: affineTransform)
-            if closePath {
-                path.addLine(to: points[0], transform: affineTransform)
-                path.closeSubpath()
-            }
-        }
-    }
-    
-    fileprivate func addIndicators(to faceRectanglePath: CGMutablePath, faceLandmarksPath: CGMutablePath, for faceObservation: VNFaceObservation) {
-        let displaySize = self.captureDeviceResolution
-        
-        let faceBounds = VNImageRectForNormalizedRect(faceObservation.boundingBox, Int(displaySize.width), Int(displaySize.height))
-        faceRectanglePath.addRect(faceBounds)
-        
-        if let landmarks = faceObservation.landmarks {
-            // Landmarks are relative to -- and normalized within --- face bounds
-            let affineTransform = CGAffineTransform(translationX: faceBounds.origin.x, y: faceBounds.origin.y)
-                .scaledBy(x: faceBounds.size.width, y: faceBounds.size.height)
-            
-            // Treat eyebrows and lines as open-ended regions when drawing paths.
-            let openLandmarkRegions: [VNFaceLandmarkRegion2D?] = [
-                landmarks.leftEyebrow,
-                landmarks.rightEyebrow,
-                landmarks.faceContour,
-                landmarks.noseCrest,
-                landmarks.medianLine
-            ]
-            for openLandmarkRegion in openLandmarkRegions where openLandmarkRegion != nil {
-                self.addPoints(in: openLandmarkRegion!, to: faceLandmarksPath, applying: affineTransform, closingWhenComplete: false)
+        /// - Tag: CreateCaptureSession
+        fileprivate func setupAVCaptureSession() -> AVCaptureSession? {
+            let captureSession = AVCaptureSession()
+            do {
+                let inputDevice = try self.configureFrontCamera(for: captureSession)
+                self.configureVideoDataOutput(for: inputDevice.device, resolution: inputDevice.resolution, captureSession: captureSession)
+                self.designatePreviewLayer(for: captureSession)
+                return captureSession
+            } catch let executionError as NSError {
+                self.presentError(executionError)
+            } catch {
+                self.presentErrorAlert(message: "An unexpected failure has occured")
             }
             
-            // Draw eyes, lips, and nose as closed regions.
-            let closedLandmarkRegions: [VNFaceLandmarkRegion2D?] = [
-                landmarks.leftEye,
-                landmarks.rightEye,
-                landmarks.outerLips,
-                landmarks.innerLips,
-                landmarks.nose
-            ]
-            for closedLandmarkRegion in closedLandmarkRegions where closedLandmarkRegion != nil {
-                self.addPoints(in: closedLandmarkRegion!, to: faceLandmarksPath, applying: affineTransform, closingWhenComplete: true)
-            }
-        }
-    }
-    
-    /// - Tag: DrawPaths
-    fileprivate func drawFaceObservations(_ faceObservations: [VNFaceObservation]) {
-        guard let faceRectangleShapeLayer = self.detectedFaceRectangleShapeLayer,
-            let faceLandmarksShapeLayer = self.detectedFaceLandmarksShapeLayer
-            else {
-            return
-        }
-        
-        CATransaction.begin()
-        
-        CATransaction.setValue(NSNumber(value: true), forKey: kCATransactionDisableActions)
-        
-        let faceRectanglePath = CGMutablePath()
-        let faceLandmarksPath = CGMutablePath()
-        
-        for faceObservation in faceObservations {
-            self.addIndicators(to: faceRectanglePath,
-                               faceLandmarksPath: faceLandmarksPath,
-                               for: faceObservation)
-        }
-        
-        faceRectangleShapeLayer.path = faceRectanglePath
-        faceLandmarksShapeLayer.path = faceLandmarksPath
-        
-        self.updateLayerGeometry()
-        
-        CATransaction.commit()
-    }
-    
-    //Flipped module part 3.1 getting leftPupil landmark and getting min x value 
-    func detectGazeDirection(in faceObservation: VNFaceObservation, isBlinking: Bool) -> CGFloat? {
-        //can only run if isBlinking is false
-        guard !isBlinking, let landmarks = faceObservation.landmarks else { return nil }
-        
-        // Access the leftPupil landmark
-        guard let leftPupil = landmarks.leftPupil else {
-            print("Left pupil landmark not found")
+            self.teardownAVCapture()
+            
             return nil
         }
         
-        // Calculate the minimum x value
-        let minXValue = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
-
-       
-        let gazeDirection = minXValue
-
-        // Print or return gaze direction for further usage
-        print("Gaze direction (based on left pupil x): \(gazeDirection)")
-        return gazeDirection
+        /// - Tag: ConfigureDeviceResolution
+        fileprivate func highestResolution420Format(for device: AVCaptureDevice) -> (format: AVCaptureDevice.Format, resolution: CGSize)? {
+            var highestResolutionFormat: AVCaptureDevice.Format? = nil
+            var highestResolutionDimensions = CMVideoDimensions(width: 0, height: 0)
+            
+            for format in device.formats {
+                let deviceFormat = format as AVCaptureDevice.Format
+                
+                let deviceFormatDescription = deviceFormat.formatDescription
+                if CMFormatDescriptionGetMediaSubType(deviceFormatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
+                    let candidateDimensions = CMVideoFormatDescriptionGetDimensions(deviceFormatDescription)
+                    if (highestResolutionFormat == nil) || (candidateDimensions.width > highestResolutionDimensions.width) {
+                        highestResolutionFormat = deviceFormat
+                        highestResolutionDimensions = candidateDimensions
+                    }
+                }
+            }
+            
+            if highestResolutionFormat != nil {
+                let resolution = CGSize(width: CGFloat(highestResolutionDimensions.width), height: CGFloat(highestResolutionDimensions.height))
+                return (highestResolutionFormat!, resolution)
+            }
+            
+            return nil
+        }
+        
+        fileprivate func configureFrontCamera(for captureSession: AVCaptureSession) throws -> (device: AVCaptureDevice, resolution: CGSize) {
+            let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .front)
+            
+            if let device = deviceDiscoverySession.devices.first {
+                if let deviceInput = try? AVCaptureDeviceInput(device: device) {
+                    if captureSession.canAddInput(deviceInput) {
+                        captureSession.addInput(deviceInput)
+                    }
+                    
+                    if let highestResolution = self.highestResolution420Format(for: device) {
+                        try device.lockForConfiguration()
+                        device.activeFormat = highestResolution.format
+                        device.unlockForConfiguration()
+                        
+                        return (device, highestResolution.resolution)
+                    }
+                }
+            }
+            
+            throw NSError(domain: "ViewController", code: 1, userInfo: nil)
+        }
+        
+        /// - Tag: CreateSerialDispatchQueue
+        fileprivate func configureVideoDataOutput(for inputDevice: AVCaptureDevice, resolution: CGSize, captureSession: AVCaptureSession) {
+            
+            let videoDataOutput = AVCaptureVideoDataOutput()
+            videoDataOutput.alwaysDiscardsLateVideoFrames = true
+            
+            // Create a serial dispatch queue used for the sample buffer delegate as well as when a still image is captured.
+            // A serial dispatch queue must be used to guarantee that video frames will be delivered in order.
+            let videoDataOutputQueue = DispatchQueue(label: "com.example.apple-samplecode.VisionFaceTrack")
+            videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
+            
+            if captureSession.canAddOutput(videoDataOutput) {
+                captureSession.addOutput(videoDataOutput)
+            }
+            
+            videoDataOutput.connection(with: .video)?.isEnabled = true
+            
+            if let captureConnection = videoDataOutput.connection(with: AVMediaType.video) {
+                if captureConnection.isCameraIntrinsicMatrixDeliverySupported {
+                    captureConnection.isCameraIntrinsicMatrixDeliveryEnabled = true
+                }
+            }
+            
+            self.videoDataOutput = videoDataOutput
+            self.videoDataOutputQueue = videoDataOutputQueue
+            
+            self.captureDevice = inputDevice
+            self.captureDeviceResolution = resolution
+        }
+        
+        /// - Tag: DesignatePreviewLayer
+        fileprivate func designatePreviewLayer(for captureSession: AVCaptureSession) {
+            let videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+            self.previewLayer = videoPreviewLayer
+            
+            videoPreviewLayer.name = "CameraPreview"
+            videoPreviewLayer.backgroundColor = UIColor.black.cgColor
+            videoPreviewLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
+            
+            if let previewRootLayer = self.previewView?.layer {
+                self.rootLayer = previewRootLayer
+                
+                previewRootLayer.masksToBounds = true
+                videoPreviewLayer.frame = previewRootLayer.bounds
+                previewRootLayer.addSublayer(videoPreviewLayer)
+            }
+        }
+        
+        // Removes infrastructure for AVCapture as part of cleanup.
+        fileprivate func teardownAVCapture() {
+            self.videoDataOutput = nil
+            self.videoDataOutputQueue = nil
+            
+            if let previewLayer = self.previewLayer {
+                previewLayer.removeFromSuperlayer()
+                self.previewLayer = nil
+            }
+        }
     }
     
     
-}
+    // MARK: Extension Drawing Vision Observations
+    extension ViewController {
+        
+        
+        fileprivate func setupVisionDrawingLayers() {
+            let captureDeviceResolution = self.captureDeviceResolution
+            
+            let captureDeviceBounds = CGRect(x: 0,
+                                             y: 0,
+                                             width: captureDeviceResolution.width,
+                                             height: captureDeviceResolution.height)
+            
+            let captureDeviceBoundsCenterPoint = CGPoint(x: captureDeviceBounds.midX,
+                                                         y: captureDeviceBounds.midY)
+            
+            let normalizedCenterPoint = CGPoint(x: 0.5, y: 0.5)
+            
+            guard let rootLayer = self.rootLayer else {
+                self.presentErrorAlert(message: "view was not property initialized")
+                return
+            }
+            
+            let overlayLayer = CALayer()
+            overlayLayer.name = "DetectionOverlay"
+            overlayLayer.masksToBounds = true
+            overlayLayer.anchorPoint = normalizedCenterPoint
+            overlayLayer.bounds = captureDeviceBounds
+            overlayLayer.position = CGPoint(x: rootLayer.bounds.midX, y: rootLayer.bounds.midY)
+            
+            let faceRectangleShapeLayer = CAShapeLayer()
+            faceRectangleShapeLayer.name = "RectangleOutlineLayer"
+            faceRectangleShapeLayer.bounds = captureDeviceBounds
+            faceRectangleShapeLayer.anchorPoint = normalizedCenterPoint
+            faceRectangleShapeLayer.position = captureDeviceBoundsCenterPoint
+            faceRectangleShapeLayer.fillColor = nil
+            faceRectangleShapeLayer.strokeColor = UIColor.green.withAlphaComponent(0.7).cgColor
+            faceRectangleShapeLayer.lineWidth = 5
+            faceRectangleShapeLayer.shadowOpacity = 0.7
+            faceRectangleShapeLayer.shadowRadius = 5
+            
+            let faceLandmarksShapeLayer = CAShapeLayer()
+            faceLandmarksShapeLayer.name = "FaceLandmarksLayer"
+            faceLandmarksShapeLayer.bounds = captureDeviceBounds
+            faceLandmarksShapeLayer.anchorPoint = normalizedCenterPoint
+            faceLandmarksShapeLayer.position = captureDeviceBoundsCenterPoint
+            faceLandmarksShapeLayer.fillColor = nil
+            faceLandmarksShapeLayer.strokeColor = UIColor.yellow.withAlphaComponent(0.7).cgColor
+            faceLandmarksShapeLayer.lineWidth = 3
+            faceLandmarksShapeLayer.shadowOpacity = 0.7
+            faceLandmarksShapeLayer.shadowRadius = 5
+            
+            overlayLayer.addSublayer(faceRectangleShapeLayer)
+            faceRectangleShapeLayer.addSublayer(faceLandmarksShapeLayer)
+            rootLayer.addSublayer(overlayLayer)
+            
+            self.detectionOverlayLayer = overlayLayer
+            self.detectedFaceRectangleShapeLayer = faceRectangleShapeLayer
+            self.detectedFaceLandmarksShapeLayer = faceLandmarksShapeLayer
+            
+            self.updateLayerGeometry()
+        }
+        
+        fileprivate func updateLayerGeometry() {
+            guard let overlayLayer = self.detectionOverlayLayer,
+                  let rootLayer = self.rootLayer,
+                  let previewLayer = self.previewLayer
+            else {
+                return
+            }
+            
+            CATransaction.setValue(NSNumber(value: true), forKey: kCATransactionDisableActions)
+            
+            let videoPreviewRect = previewLayer.layerRectConverted(fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
+            
+            var rotation: CGFloat
+            var scaleX: CGFloat
+            var scaleY: CGFloat
+            
+            // Rotate the layer into screen orientation.
+            switch UIDevice.current.orientation {
+            case .portraitUpsideDown:
+                rotation = 180
+                scaleX = videoPreviewRect.width / captureDeviceResolution.width
+                scaleY = videoPreviewRect.height / captureDeviceResolution.height
+                
+            case .landscapeLeft:
+                rotation = 90
+                scaleX = videoPreviewRect.height / captureDeviceResolution.width
+                scaleY = scaleX
+                
+            case .landscapeRight:
+                rotation = -90
+                scaleX = videoPreviewRect.height / captureDeviceResolution.width
+                scaleY = scaleX
+                
+            default:
+                rotation = 0
+                scaleX = videoPreviewRect.width / captureDeviceResolution.width
+                scaleY = videoPreviewRect.height / captureDeviceResolution.height
+            }
+            
+            // Scale and mirror the image to ensure upright presentation.
+            let affineTransform = CGAffineTransform(rotationAngle: radiansForDegrees(rotation))
+                .scaledBy(x: scaleX, y: -scaleY)
+            overlayLayer.setAffineTransform(affineTransform)
+            
+            // Cover entire screen UI.
+            let rootLayerBounds = rootLayer.bounds
+            overlayLayer.position = CGPoint(x: rootLayerBounds.midX, y: rootLayerBounds.midY)
+        }
+        
+        fileprivate func addPoints(in landmarkRegion: VNFaceLandmarkRegion2D, to path: CGMutablePath, applying affineTransform: CGAffineTransform, closingWhenComplete closePath: Bool) {
+            let pointCount = landmarkRegion.pointCount
+            if pointCount > 1 {
+                let points: [CGPoint] = landmarkRegion.normalizedPoints
+                path.move(to: points[0], transform: affineTransform)
+                path.addLines(between: points, transform: affineTransform)
+                if closePath {
+                    path.addLine(to: points[0], transform: affineTransform)
+                    path.closeSubpath()
+                }
+            }
+        }
+        
+        fileprivate func addIndicators(to faceRectanglePath: CGMutablePath, faceLandmarksPath: CGMutablePath, for faceObservation: VNFaceObservation) {
+            let displaySize = self.captureDeviceResolution
+            
+            let faceBounds = VNImageRectForNormalizedRect(faceObservation.boundingBox, Int(displaySize.width), Int(displaySize.height))
+            faceRectanglePath.addRect(faceBounds)
+            
+            if let landmarks = faceObservation.landmarks {
+                // Landmarks are relative to -- and normalized within --- face bounds
+                let affineTransform = CGAffineTransform(translationX: faceBounds.origin.x, y: faceBounds.origin.y)
+                    .scaledBy(x: faceBounds.size.width, y: faceBounds.size.height)
+                
+                // Treat eyebrows and lines as open-ended regions when drawing paths.
+                let openLandmarkRegions: [VNFaceLandmarkRegion2D?] = [
+                    landmarks.leftEyebrow,
+                    landmarks.rightEyebrow,
+                    landmarks.faceContour,
+                    landmarks.noseCrest,
+                    landmarks.medianLine
+                ]
+                for openLandmarkRegion in openLandmarkRegions where openLandmarkRegion != nil {
+                    self.addPoints(in: openLandmarkRegion!, to: faceLandmarksPath, applying: affineTransform, closingWhenComplete: false)
+                }
+                
+                // Draw eyes, lips, and nose as closed regions.
+                let closedLandmarkRegions: [VNFaceLandmarkRegion2D?] = [
+                    landmarks.leftEye,
+                    landmarks.rightEye,
+                    landmarks.outerLips,
+                    landmarks.innerLips,
+                    landmarks.nose
+                ]
+                for closedLandmarkRegion in closedLandmarkRegions where closedLandmarkRegion != nil {
+                    self.addPoints(in: closedLandmarkRegion!, to: faceLandmarksPath, applying: affineTransform, closingWhenComplete: true)
+                }
+            }
+        }
+        
+        /// - Tag: DrawPaths
+        fileprivate func drawFaceObservations(_ faceObservations: [VNFaceObservation]) {
+            guard let faceRectangleShapeLayer = self.detectedFaceRectangleShapeLayer,
+                  let faceLandmarksShapeLayer = self.detectedFaceLandmarksShapeLayer
+            else {
+                return
+            }
+            
+            CATransaction.begin()
+            
+            CATransaction.setValue(NSNumber(value: true), forKey: kCATransactionDisableActions)
+            
+            let faceRectanglePath = CGMutablePath()
+            let faceLandmarksPath = CGMutablePath()
+            
+            for faceObservation in faceObservations {
+                self.addIndicators(to: faceRectanglePath,
+                                   faceLandmarksPath: faceLandmarksPath,
+                                   for: faceObservation)
+            }
+            
+            faceRectangleShapeLayer.path = faceRectanglePath
+            faceLandmarksShapeLayer.path = faceLandmarksPath
+            
+            self.updateLayerGeometry()
+            
+            CATransaction.commit()
+        }
+        
+        //Flipped module part 3.1 getting leftPupil landmark and getting min x value
+        func detectGazeDirection(in faceObservation: VNFaceObservation) -> CGFloat? {
+            
+            var leftOfEye = 0.0
+            var rightOfEye = 0.0
+            var currentDiff = 1.0
+            // If no observations then return a default of 0.5
+            guard let landmarks = faceObservation.landmarks else { return 0.5}
+            
+            // Access the left eye. Use the space between the left and right sides of the eye to know the area the pupil should be within.
+            if let leftEye = landmarks.leftEye {
+                let leftEyePoints = leftEye.normalizedPoints
+                
+                leftOfEye = leftEyePoints.map { $0.x}.min() ?? 0.0
+                rightOfEye = leftEyePoints.map { $0.x}.max() ?? 0.0
+                
+                currentDiff = rightOfEye - leftOfEye
+            }
+                
+            // Access the leftPupil landmark. If the pupil is not found then set the label to the default 0.5.
+            guard let leftPupil = landmarks.leftPupil else {
+                print("Left pupil landmark not found")
+                return 0.5
+            }
+                
+            // Calculate the minimum x value
+            let minXLeftPupil = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
+            let maxXLeftPupil = leftPupil.normalizedPoints.map { $0.x }.max() ?? 0.0
+            let avgXPupil = (((minXLeftPupil - leftOfEye) / currentDiff) + ((maxXLeftPupil - leftOfEye) / currentDiff)) / 2
+            
+                
 
+            
+            // If the avg area of the pupil is between left of 0.4 then only use the left of the pupil to return the gaze direction. If the avg area of the pupil is right of 0.6 then only use the right of the pupil to return the gaze direction. Between 0.4 and 0.6 just use the average of the 2. This means there will be a slight jump at 0.4 and 0.6.
+            
+            if (avgXPupil < 0.4) {
+                let gazeDirection = (minXLeftPupil - leftOfEye) / currentDiff
+                print("Gaze direction (based on left pupil x): \(gazeDirection)")
+                return gazeDirection
+            }
+            if (avgXPupil > 0.6) {
+                let gazeDirection = (maxXLeftPupil - leftOfEye) / currentDiff
+                print("Gaze direction (based on left pupil x): \(gazeDirection)")
+                return gazeDirection
+            }
+            let gazeDirection = avgXPupil
+
+            // Print or return gaze direction for further usage
+            print("Gaze direction (based on left pupil x): \(gazeDirection)")
+            //self.gazeSlider.setValue(Float(gazeDirection), animated: true)
+            return gazeDirection
+        }
+            
+
+        
+    }
+    
 
 
 
