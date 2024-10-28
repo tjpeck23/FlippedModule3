@@ -42,7 +42,7 @@ class ViewController: UIViewController {
     var leftEyeY: (min: CGFloat, max: CGFloat) = (CGFloat.infinity, -CGFloat.infinity)
     
     // isBlinking
-    
+
     var isBlinking: Bool = false
     
     // MARK: UIViewController overrides
@@ -345,7 +345,9 @@ class ViewController: UIViewController {
             return
         }
         
+
         // Flipped Module Part 1.1, 1.2, 1.3
+
         // The points of the landmarks are normalized to be resolution independent. By putting the coordinates of the landmarks on a scale of 0.0-1.0, they are easily translatable across various resolutions. The points are normalized to the dimensions of the face observation's bounding box
         for observation in results {
             if let landmarks = observation.landmarks {
@@ -357,12 +359,14 @@ class ViewController: UIViewController {
                     let minY = leftEyePoints.map { $0.y}.min() ?? 0.0
                     let maxY = leftEyePoints.map { $0.y}.max() ?? 0.0
                     
-                    var currentDiff: CGFloat = maxY - minY
+
+                    var currentDiff:CGFloat = maxY-minY
+
                     
                     // Flipped Module part 2.1
                     
                     // This is the current difference between your left eye's Y max and Y min.
-                    
+
                     print("Current Y Difference: \(currentDiff)")
                     
                     print("Left Eye - Min X: \(minX), Max X: \(maxX), Min Y: \(minY), Max Y: \(maxY)")
@@ -373,24 +377,22 @@ class ViewController: UIViewController {
                     if maxY > leftEyeY.max { leftEyeY.max = maxY }
                     
                     // Global Y axis difference
-                    
+
                     print("Greatest Y Difference: \(leftEyeY.max-leftEyeY.min)")
                     
-                    //If the difference is below a finetuned threshold/ then set the property isBlinking to true.
-                    
+                    // If the difference is below a finetuned threshold, then set the property isBlinking to true
+
                     if currentDiff <= 0.038 {
                         self.isBlinking = true
                     }else{
                         self.isBlinking = false
                     }
-                    
+
                     // Printing for debugging and ease of use
-                    
                     print("Is Blinking: \(self.isBlinking)")
                     
-                    //self.gazeSlider.setValue(Float(detectGazeDirection(in: observation, isBlinking: self.isBlinking)!), animated: true);
                 }
-                //detectGazeDirection(in: results, isBlinking: self.isBlinking)
+
             }
         }
         
