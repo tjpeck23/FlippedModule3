@@ -108,8 +108,8 @@ class ViewController: UIViewController {
         // see if we can get any face features, this will fail if no faces detected
         // try to save the face observations to a results vector
         guard let faceDetectionRequest = request as? VNDetectFaceRectanglesRequest,
-              let results = faceDetectionRequest.results as? [VNFaceObservation] else {
-            return
+            let results = faceDetectionRequest.results as? [VNFaceObservation] else {
+                return
         }
         
         if !results.isEmpty{
@@ -145,7 +145,7 @@ class ViewController: UIViewController {
     // Handle delegate method callback on receiving a sample buffer.
     // This is where we get the pixel buffer from the camera and need to
     // generate the vision requests
-    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
+    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) 
     {
         
         var requestHandlerOptions: [VNImageOption: AnyObject] = [:]
@@ -774,26 +774,58 @@ class ViewController: UIViewController {
         
         //Flipped module part 3.1 getting leftPupil landmark and getting min x value
         func detectGazeDirection(in faceObservation: VNFaceObservation, isBlinking: Bool) -> CGFloat? {
+            
+            var leftOfEye = 0.0
+            var rightOfEye = 0.0
+            var currentDiff = 1.0
             //can only run if isBlinking is false, if they are blinking set label to 0.5 because they are neither looking left nor right
             guard !isBlinking, let landmarks = faceObservation.landmarks else { return 0.5}
             
+            // Access the left eye. Use the space between the left and right sides of the eye to know the area the pupil should be within.
+            if let leftEye = landmarks.leftEye {
+                let leftEyePoints = leftEye.normalizedPoints
+                
+                leftOfEye = leftEyePoints.map { $0.x}.min() ?? 0.0
+                rightOfEye = leftEyePoints.map { $0.x}.max() ?? 0.0
+                
+                currentDiff = rightOfEye - leftOfEye
+            }
+                
             // Access the leftPupil landmark. If the pupil is not found then set the label to the default 0.5.
             guard let leftPupil = landmarks.leftPupil else {
                 print("Left pupil landmark not found")
                 return 0.5
             }
-            
+                
             // Calculate the minimum x value
-            let minXValue = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
+            let minXLeftPupil = leftPupil.normalizedPoints.map { $0.x }.min() ?? 0.0
+            let maxXLeftPupil = leftPupil.normalizedPoints.map { $0.x }.max() ?? 0.0
+            let avgXPupil = (((minXLeftPupil - leftOfEye) / currentDiff) + ((maxXLeftPupil - leftOfEye) / currentDiff)) / 2
             
-            let gazeDirection = minXValue
+                
+
+            
+            // If the avg area of the pupil is between left of 0.3 then only use the left of the pupil to return the gaze direction. If the avg area of the pupil is right of 0.7 then only use the right of the pupil to return the gaze direction. Between 0.3 and 0.7 just use the average of the 2. This means there will be a slight jump at 0.3 and 0.7.
+            
+            if (avgXPupil < 0.3) {
+                let gazeDirection = (minXLeftPupil - leftOfEye) / currentDiff
+                print("Gaze direction (based on left pupil x): \(gazeDirection)")
+                return gazeDirection
+            }
+            if (avgXPupil > 0.7) {
+                let gazeDirection = (maxXLeftPupil - leftOfEye) / currentDiff
+                print("Gaze direction (based on left pupil x): \(gazeDirection)")
+                return gazeDirection
+            }
+            let gazeDirection = avgXPupil
+
             // Print or return gaze direction for further usage
             print("Gaze direction (based on left pupil x): \(gazeDirection)")
             //self.gazeSlider.setValue(Float(gazeDirection), animated: true)
             return gazeDirection
         }
-        
-        
+            
+
         
     }
     
