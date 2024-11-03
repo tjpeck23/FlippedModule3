@@ -96,7 +96,7 @@ class BodyViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
             let rightElbowPoint = CGPoint(x: rightElbow.location.x * overlay.bounds.width, y: (1 - rightElbow.location.y) * overlay.bounds.height)
             let rightShoulderPoint = CGPoint(x: rightShoulder.location.x * overlay.bounds.width, y: (1 - rightShoulder.location.y) * overlay.bounds.height)
                     
-            
+            print(rightWristPoint.y)
         }
         
     }
