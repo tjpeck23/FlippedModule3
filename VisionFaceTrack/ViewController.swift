@@ -28,6 +28,8 @@ class ViewController: UIViewController {
     private var didFindPose:Bool = false
     private var didFindInitialFace:Bool = false
     
+    private var detectionOverlay: CAShapeLayer?
+    
     
     // MARK: UIViewController overrides
     
@@ -43,8 +45,20 @@ class ViewController: UIViewController {
         // start the capture session and get processing a face!
         self.session?.startRunning()
         
+        setupOverlay()
+        
         self.didFindPose = false
     }
+    
+    private func setupOverlay() {
+            let overlayLayer = CAShapeLayer()
+            overlayLayer.frame = previewView?.bounds ?? .zero
+            overlayLayer.strokeColor = UIColor.clear.cgColor
+            overlayLayer.lineWidth = 2.0
+            overlayLayer.fillColor = UIColor.clear.cgColor
+            previewView?.layer.addSublayer(overlayLayer)
+            self.detectionOverlay = overlayLayer
+        }
     
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
@@ -110,15 +124,43 @@ class ViewController: UIViewController {
         
         DispatchQueue.main.async {
             print("Initial body pose found...")
-            self.didFindPose = true
             
-            DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
-                print("Resetting body detection...")
-                self.didFindPose = false
-            })
+            for observation in results{
+                if self.detectFlexedBicepPose(from: observation) {
+                    print("Flexed bicep detected!")
+                    self.didFindPose = true
+                    
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
+                        print("Resetting body detection...")
+                        self.didFindPose = false
+                    })
+                }else{
+                    print("No flexed bicep detected...")
+                }
+            }
+            
         }
         
         
+    }
+    
+    func detectFlexedBicepPose(from observation: VNHumanBodyPoseObservation) -> Bool {
+        guard let wrist = try? observation.recognizedPoint(.rightWrist),
+              let elbow = try? observation.recognizedPoint(.rightElbow),
+              let shoulder = try? observation.recognizedPoint(.rightShoulder) else {
+            print("Required key points not found.")
+            return false
+        }
+        
+        guard wrist.confidence > 0.5, elbow.confidence > 0.5, shoulder.confidence > 0.5 else {
+            return false
+        }
+        
+        let isElbowRaised = elbow.location.y <= shoulder.location.y
+        let isWristNearShoulder = abs(wrist.location.x - shoulder.location.x) < 0.1 && abs(wrist.location.y - shoulder.location.y) < 0.1
+        
+        return isElbowRaised && isWristNearShoulder
     }
     
     // define behavior for when we detect a face
