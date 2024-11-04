@@ -125,6 +125,8 @@ class ViewController: UIViewController {
         DispatchQueue.main.async {
             print("Initial body pose found...")
             
+            results.forEach { self.processObservation($0) }
+            /*
             for observation in results{
                 if self.detectFlexedBicepPose(from: observation) {
                     print("Flexed bicep detected!")
@@ -139,6 +141,7 @@ class ViewController: UIViewController {
                     print("No flexed bicep detected...")
                 }
             }
+            */
             
         }
         
@@ -146,22 +149,48 @@ class ViewController: UIViewController {
     }
     
     func detectFlexedBicepPose(from observation: VNHumanBodyPoseObservation) -> Bool {
-        guard let wrist = try? observation.recognizedPoint(.rightWrist),
-              let elbow = try? observation.recognizedPoint(.rightElbow),
-              let shoulder = try? observation.recognizedPoint(.rightShoulder) else {
-            print("Required key points not found.")
+        // Detect right arm flexed bicep
+        guard let rightWrist = try? observation.recognizedPoint(.rightWrist),
+              let rightElbow = try? observation.recognizedPoint(.rightElbow),
+              let rightShoulder = try? observation.recognizedPoint(.rightShoulder) else {
+            print("Required right arm key points not found.")
             return false
         }
         
-        guard wrist.confidence > 0.5, elbow.confidence > 0.5, shoulder.confidence > 0.5 else {
+        // Check confidence for right arm key points
+        guard rightWrist.confidence > 0.5, rightElbow.confidence > 0.5, rightShoulder.confidence > 0.5 else {
             return false
         }
         
-        let isElbowRaised = elbow.location.y <= shoulder.location.y
-        let isWristNearShoulder = abs(wrist.location.x - shoulder.location.x) < 0.1 && abs(wrist.location.y - shoulder.location.y) < 0.1
+        let isRightElbowRaised = rightElbow.location.y >= rightShoulder.location.y
+        let isRightWristNearShoulder = abs(rightWrist.location.x - rightShoulder.location.x) < 0.1 &&
+                                       abs(rightWrist.location.y - rightShoulder.location.y) < 0.1
         
-        return isElbowRaised && isWristNearShoulder
+        let isRightBicepFlexed = isRightElbowRaised && isRightWristNearShoulder
+        
+        // Detect left arm flexed bicep
+        guard let leftWrist = try? observation.recognizedPoint(.leftWrist),
+              let leftElbow = try? observation.recognizedPoint(.leftElbow),
+              let leftShoulder = try? observation.recognizedPoint(.leftShoulder) else {
+            print("Required left arm key points not found.")
+            return isRightBicepFlexed // Return true if right arm is flexed
+        }
+        
+        // Check confidence for left arm key points
+        guard leftWrist.confidence > 0.5, leftElbow.confidence > 0.5, leftShoulder.confidence > 0.5 else {
+            return isRightBicepFlexed
+        }
+        
+        let isLeftElbowRaised = leftElbow.location.y >= leftShoulder.location.y
+        let isLeftWristNearShoulder = abs(leftWrist.location.x - leftShoulder.location.x) < 0.1 &&
+                                      abs(leftWrist.location.y - leftShoulder.location.y) < 0.1
+        
+        let isLeftBicepFlexed = isLeftElbowRaised && isLeftWristNearShoulder
+        
+        // Return true if either bicep is flexed
+        return isRightBicepFlexed || isLeftBicepFlexed
     }
+
     
     // define behavior for when we detect a face
     func faceDetectionCompletionHandler(request:VNRequest, error: Error?){
@@ -242,7 +271,7 @@ class ViewController: UIViewController {
                     try imageRequestHandler.perform(poseRequests)
                 }
             } catch let error as NSError {
-                NSLog("Failed to perform FacePoseRequest: %@", error)
+                NSLog("Failed to perform PoseRequest: %@", error)
             }
         }
         
@@ -424,8 +453,43 @@ extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
             self.previewLayer = nil
         }
     }
+    
+    func processObservation(_ observation: VNHumanBodyPoseObservation) {
+        
+        // Retrieve all torso points.
+        guard let armPoints = try? observation.recognizedPoints(.leftArm) else { return }
+        guard let torsoPoints =
+                try? observation.recognizedPoints(.torso) else { return }
+        //Commenting out because they make a lot of noise but feel free to uncomment them out to see what their results are if you need them
+        //print(armPoints)
+        //print(torsoPoints)
+        
+        if self.detectFlexedBicepPose(from: observation) {
+            print("Flexed bicep detected!")
+            self.didFindPose = true
+        
+            DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
+            print("Resetting body detection...")
+            self.didFindPose = false
+        })
+        }else{
+        print("No flexed bicep detected...")
+        }
+        /*
+                                            // Torso joint names in a clockwise ordering.
+                                            let torsoJointNames: [VNHumanBodyPoseObservation.JointName] = [
+                                            .neck,
+                                            .rightShoulder,
+                                            .rightHip,
+                                            .root,
+                                            .leftHip,
+                                            .leftShoulder
+                                            ]
+                                            */
+            
+
+    }
+    
 }
-
-
 
 
