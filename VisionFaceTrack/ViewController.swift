@@ -110,15 +110,45 @@ class ViewController: UIViewController {
         
         DispatchQueue.main.async {
             print("Initial body pose found...")
-            self.didFindPose = true
             
-            DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
-                print("Resetting body detection...")
-                self.didFindPose = false
-            })
+            results.forEach { self.processObservation($0) }
+            
+            for observation in results{
+                if self.detectFlexedBicepPose(from: observation) {
+                    print("Flexed bicep detected!")
+                    self.didFindPose = true
+                    
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
+                        print("Resetting body detection...")
+                        self.didFindPose = false
+                    })
+                }else{
+                    print("No flexed bicep detected...")
+                }
+            }
+            
         }
         
         
+    }
+    
+    func detectFlexedBicepPose(from observation: VNHumanBodyPoseObservation) -> Bool {
+        guard let wrist = try? observation.recognizedPoint(.rightWrist),
+              let elbow = try? observation.recognizedPoint(.rightElbow),
+              let shoulder = try? observation.recognizedPoint(.rightShoulder) else {
+            print("Required key points not found.")
+            return false
+        }
+        
+        guard wrist.confidence > 0.5, elbow.confidence > 0.5, shoulder.confidence > 0.5 else {
+            return false
+        }
+        
+        let isElbowRaised = elbow.location.y <= shoulder.location.y
+        let isWristNearShoulder = abs(wrist.location.x - shoulder.location.x) < 0.1 && abs(wrist.location.y - shoulder.location.y) < 0.1
+        
+        return isElbowRaised && isWristNearShoulder
     }
     
     // define behavior for when we detect a face
@@ -381,6 +411,29 @@ extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
             previewLayer.removeFromSuperlayer()
             self.previewLayer = nil
         }
+    }
+    
+    func processObservation(_ observation: VNHumanBodyPoseObservation) {
+        
+        // Retrieve all torso points.
+        guard let armPoints = try? observation.recognizedPoints(.leftArm) else { return }
+        guard let torsoPoints =
+                try? observation.recognizedPoints(.torso) else { return }
+        
+        print(armPoints)
+        print(torsoPoints)
+        /*
+        // Torso joint names in a clockwise ordering.
+        let torsoJointNames: [VNHumanBodyPoseObservation.JointName] = [
+            .neck,
+            .rightShoulder,
+            .rightHip,
+            .root,
+            .leftHip,
+            .leftShoulder
+        ]
+        */
+
     }
 }
 
