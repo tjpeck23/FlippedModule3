@@ -135,7 +135,13 @@ class ViewController: UIViewController {
                 if self.detectFlexedBicepPose(from: observation) {
                     self.changeOverlayColor(.green)  // Change color if flexed bicep is detected
                     self.didFindPose = true
+                    print("Flexed bicep flexed!")
+                    DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
+                        print("Resetting body detection...")
+                        self.didFindPose = false
+                    })
                 } else {
+                    print("No flexed bicep detected...")
                     self.changeOverlayColor(.red)    // Default color
                            }
                        }
@@ -180,7 +186,7 @@ class ViewController: UIViewController {
         let isRightWristNearShoulder = abs(rightWrist.location.x - rightShoulder.location.x) < 0.1 &&
                                        abs(rightWrist.location.y - rightShoulder.location.y) < 0.1
         
-        let isRightBicepFlexed = isRightElbowRaised && isRightWristNearShoulder
+        let isRightBicepFlexed = isRightElbowRaised && !isRightWristNearShoulder
         
         // Detect left arm flexed bicep
         guard let leftWrist = try? observation.recognizedPoint(.leftWrist),
@@ -199,7 +205,7 @@ class ViewController: UIViewController {
         let isLeftWristNearShoulder = abs(leftWrist.location.x - leftShoulder.location.x) < 0.1 &&
                                       abs(leftWrist.location.y - leftShoulder.location.y) < 0.1
         
-        let isLeftBicepFlexed = isLeftElbowRaised && isLeftWristNearShoulder
+        let isLeftBicepFlexed = isLeftElbowRaised && !isLeftWristNearShoulder
         
         // Return true if either bicep is flexed
         return isRightBicepFlexed || isLeftBicepFlexed
