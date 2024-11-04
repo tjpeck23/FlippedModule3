@@ -125,7 +125,21 @@ class ViewController: UIViewController {
         DispatchQueue.main.async {
             print("Initial body pose found...")
             
-            results.forEach { self.processObservation($0) }
+            // Clear any existing drawings
+            self.detectionOverlay?.sublayers?.forEach { $0.removeFromSuperlayer() }
+                       
+            for observation in results {
+                self.drawBodyPose(observation)
+                           
+                // Check for specific pose and update overlay color
+                if self.detectFlexedBicepPose(from: observation) {
+                    self.changeOverlayColor(.green)  // Change color if flexed bicep is detected
+                    self.didFindPose = true
+                } else {
+                    self.changeOverlayColor(.red)    // Default color
+                           }
+                       }
+                       
             /*
             for observation in results{
                 if self.detectFlexedBicepPose(from: observation) {
@@ -230,6 +244,16 @@ class ViewController: UIViewController {
             lineLayer.lineWidth = 2
             detectionOverlay?.addSublayer(lineLayer)
         }
+    
+    //change overlay color
+    func changeOverlayColor(_ color: UIColor) {
+           detectionOverlay?.sublayers?.forEach {
+               if let shapeLayer = $0 as? CAShapeLayer {
+                   shapeLayer.fillColor = color.cgColor
+                   shapeLayer.strokeColor = color.cgColor
+               }
+           }
+       }
     
     // define behavior for when we detect a face
     func faceDetectionCompletionHandler(request:VNRequest, error: Error?){
