@@ -112,7 +112,7 @@ class ViewController: UIViewController {
             print("Initial body pose found...")
             
             results.forEach { self.processObservation($0) }
-            
+            /*
             for observation in results{
                 if self.detectFlexedBicepPose(from: observation) {
                     print("Flexed bicep detected!")
@@ -127,6 +127,7 @@ class ViewController: UIViewController {
                     print("No flexed bicep detected...")
                 }
             }
+            */
             
         }
         
@@ -419,24 +420,36 @@ extension ViewController:AVCaptureVideoDataOutputSampleBufferDelegate{
         guard let armPoints = try? observation.recognizedPoints(.leftArm) else { return }
         guard let torsoPoints =
                 try? observation.recognizedPoints(.torso) else { return }
+        //Commenting out because they make a lot of noise but feel free to uncomment them out to see what their results are if you need them
+        //print(armPoints)
+        //print(torsoPoints)
         
-        print(armPoints)
-        print(torsoPoints)
+        if self.detectFlexedBicepPose(from: observation) {
+            print("Flexed bicep detected!")
+            self.didFindPose = true
+        
+            DispatchQueue.main.asyncAfter(deadline: .now()+5, execute: {
+            print("Resetting body detection...")
+            self.didFindPose = false
+        })
+        }else{
+        print("No flexed bicep detected...")
+        }
         /*
-        // Torso joint names in a clockwise ordering.
-        let torsoJointNames: [VNHumanBodyPoseObservation.JointName] = [
-            .neck,
-            .rightShoulder,
-            .rightHip,
-            .root,
-            .leftHip,
-            .leftShoulder
-        ]
-        */
+                                            // Torso joint names in a clockwise ordering.
+                                            let torsoJointNames: [VNHumanBodyPoseObservation.JointName] = [
+                                            .neck,
+                                            .rightShoulder,
+                                            .rightHip,
+                                            .root,
+                                            .leftHip,
+                                            .leftShoulder
+                                            ]
+                                            */
+            
 
     }
+    
 }
-
-
 
 
